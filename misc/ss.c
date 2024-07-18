@@ -851,6 +851,15 @@ struct dctcpstat {
 	bool		enabled;
 };
 
+struct praguestat {
+	uint64_t alpha;
+	uint32_t max_burst;
+	uint32_t round;
+	uint64_t rate_bytes;
+	uint64_t frac_cwnd;
+	bool enabled;
+};
+
 struct tcpstat {
 	struct sockstat	    ss;
 	unsigned int	    timer;
@@ -911,6 +920,7 @@ struct tcpstat {
 	bool		    app_limited;
 	struct dctcpstat    *dctcp;
 	struct tcp_bbr_info *bbr_info;
+	struct praguestat   *prague;
 };
 
 /* SCTP assocs share the same inode number with their parent endpoint. So if we
@@ -2656,6 +2666,19 @@ static void tcp_stats_print(struct tcpstat *s)
 		out(" dctcp:fallback_mode");
 	}
 
+	if (s->prague && s->prague->enabled) {
+		struct praguestat *prague = s->prague;
+
+		out(" prague:(alpha:%g%%,max_burst:%u,"
+		    "round:%u,rate:%lu,cwnd:%lu)",
+		    (double)prague->alpha / (double)(1ULL << 20U) * 100.0f,
+		    prague->max_burst, prague->round,
+		    prague->rate_bytes, prague->frac_cwnd
+		    );
+	} else if (s->prague) {
+		out(" prague:reno-fallback-mode");
+	}
+
 	if (s->bbr_info) {
 		__u64 bw;
 
@@ -3138,6 +3161,22 @@ static void tcp_show_info(const struct nlmsghdr *nlh, struct inet_diag_msg *r,
 			s.dctcp		= dctcp;
 		}
 
+		if (tb[INET_DIAG_PRAGUEINFO]) {
+			struct praguestat *prague = malloc(sizeof(struct
+								  praguestat));
+
+			const struct tcp_prague_info *pinfo
+				= RTA_DATA(tb[INET_DIAG_PRAGUEINFO]);
+
+			prague->enabled	= !!pinfo->prague_enabled;
+			prague->alpha	= pinfo->prague_alpha;
+			prague->max_burst = pinfo->prague_max_burst;
+			prague->round = pinfo->prague_round;
+			prague->rate_bytes = pinfo->prague_rate_bytes;
+			prague->frac_cwnd = pinfo->prague_frac_cwnd;
+			s.prague	= prague;
+		}
+
 		if (tb[INET_DIAG_BBRINFO]) {
 			const void *bbr_info = RTA_DATA(tb[INET_DIAG_BBRINFO]);
 			int len = min(RTA_PAYLOAD(tb[INET_DIAG_BBRINFO]),
@@ -3186,6 +3225,7 @@ static void tcp_show_info(const struct nlmsghdr *nlh, struct inet_diag_msg *r,
 		tcp_stats_print(&s);
 		free(s.dctcp);
 		free(s.bbr_info);
+		free(s.prague);
 	}
 	if (tb[INET_DIAG_MD5SIG]) {
 		struct tcp_diag_md5sig *sig = RTA_DATA(tb[INET_DIAG_MD5SIG]);
