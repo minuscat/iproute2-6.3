@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
 /* Copyright (C) 2024 Nokia
  *
  * Author: Koen De Schepper <koen.de_schepper@nokia-bell-labs.com>
@@ -13,9 +13,10 @@
  * - Supports coupled dual-queue with PI2 as defined in RFC9332
  * - Supports ECN L4S-identifier (IP.ECN==0b*1)
  *
- * note: DCTCP is not Prague compliant, so DCTCP & DualPI2 can only be
- *   used in DC context; BBRv3 (overwrites bbr) stopped Prague support,
- *   you should use TCP-Prague instead for low latency apps
+ * note: Although DCTCP and BBRv3 can use shallow-threshold ECN marks,
+ *   they do not meet the 'Prague L4S Requirements' listed in RFC 9331
+ *   Section 4, so they can only be used with DualPI2 in a datacenter
+ *   context.
  *
  * References:
  * - RFC9332: https://datatracker.ietf.org/doc/html/rfc9332
@@ -69,6 +70,7 @@ static void explain(void)
 {
 	fprintf(stderr, "Usage: ... dualpi2\n");
 	fprintf(stderr, "               [limit PACKETS]\n");
+	fprintf(stderr, "               [memlimit BYTES]\n");
 	fprintf(stderr, "               [coupling_factor NUMBER]\n");
 	fprintf(stderr, "               [step_thresh TIME|PACKETS]\n");
 	fprintf(stderr, "               [drop_on_overload|overflow]\n");
@@ -155,6 +157,7 @@ static int dualpi2_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 			     struct nlmsghdr *n, const char *dev)
 {
 	uint32_t limit = 0;
+	uint32_t memory_limit = 0;
 	uint32_t target = 0;
 	uint32_t tupdate = 0;
 	uint32_t alpha = DEFAULT_ALPHA_BETA;
@@ -176,6 +179,12 @@ static int dualpi2_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 			NEXT_ARG();
 			if (get_u32(&limit, *argv, 10)) {
 				fprintf(stderr, "Illegal \"limit\"\n");
+				return -1;
+			}
+		} else if (strcmp(*argv, "memlimit") == 0) {
+			NEXT_ARG();
+			if (get_u32(&memory_limit, *argv, 10)) {
+				fprintf(stderr, "Illegal \"memlimit\"\n");
 				return -1;
 			}
 		} else if (strcmp(*argv, "target") == 0) {
@@ -321,6 +330,8 @@ static int dualpi2_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	tail = addattr_nest(n, 1024, TCA_OPTIONS | NLA_F_NESTED);
 	if (limit)
 		addattr32(n, 1024, TCA_DUALPI2_LIMIT, limit);
+	if (memory_limit)
+		addattr32(n, 1024, TCA_DUALPI2_MEMORY_LIMIT, memory_limit);
 	if (tupdate)
 		addattr32(n, 1024, TCA_DUALPI2_TUPDATE, tupdate);
 	if (target)
@@ -383,6 +394,10 @@ static int dualpi2_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 	    RTA_PAYLOAD(tb[TCA_DUALPI2_LIMIT]) >= sizeof(__u32))
 		print_uint(PRINT_ANY, "limit", "limit %up ",
 			   rta_getattr_u32(tb[TCA_DUALPI2_LIMIT]));
+	if (tb[TCA_DUALPI2_MEMORY_LIMIT] &&
+	    RTA_PAYLOAD(tb[TCA_DUALPI2_MEMORY_LIMIT]) >= sizeof(__u32))
+		print_uint(PRINT_ANY, "memlimit", "memlimit %uB ",
+			   rta_getattr_u32(tb[TCA_DUALPI2_MEMORY_LIMIT]));
 	if (tb[TCA_DUALPI2_TARGET] &&
 	    RTA_PAYLOAD(tb[TCA_DUALPI2_TARGET]) >= sizeof(__u32)) {
 		target = rta_getattr_u32(tb[TCA_DUALPI2_TARGET]);
@@ -481,6 +496,8 @@ static int dualpi2_print_xstats(struct qdisc_util *qu, FILE *f,
 		st->packets_in_c, st->packets_in_l, st->maxq);
 	fprintf(f, "ecn_mark %u step_marks %u\n", st->ecn_mark, st->step_marks);
 	fprintf(f, "credit %d (%c)\n", st->credit, st->credit > 0 ? 'C' : 'L');
+	fprintf(f, "memory used %u (max %u) of memory limit %u\n",
+		st->memory_used, st->max_memory_used, st->memory_limit);
 	return 0;
 
 }

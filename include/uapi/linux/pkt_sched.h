@@ -1282,6 +1282,7 @@ enum {
 enum {
 	TCA_DUALPI2_UNSPEC,
 	TCA_DUALPI2_LIMIT,		/* Packets */
+	TCA_DUALPI2_MEMORY_LIMIT,	/* Memory limit in Bytes */
 	TCA_DUALPI2_TARGET,		/* us */
 	TCA_DUALPI2_TUPDATE,		/* us */
 	TCA_DUALPI2_ALPHA,		/* Hz scaled up by 256 */
@@ -1310,6 +1311,9 @@ struct tc_dualpi2_xstats {
 	__u32 maxq;			/* maximum queue size */
 	__u32 ecn_mark;			/* packets marked with ecn*/
 	__u32 step_marks;		/* ECN marks due to the step AQM */
+	__u32 memory_used;		/* Meory used of both queues */
+	__u32 max_memory_used;		/* Maximum used memory */
+	__u32 memory_limit;		/* Memory limit of both queues */
 };
 
 #endif
