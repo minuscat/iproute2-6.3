@@ -43,10 +43,17 @@ jobs:
       with:
         name: iproute2-l4s
         path: iproute2-l4s
+    - name: Extract branch and timestamp
+      id: vars
+      shell: bash
+      run: |
+        echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        echo "date=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
     - name: Release tip build
-      uses: pyTooling/Actions/releaser@main
+      uses: softprops/action-gh-release@v2
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        tag: ${{ steps.extract_branch.outputs.branch }}-build
+        tag_name: ${{ steps.vars.outputs.branch }}-build-${{ steps.vars.outputs.date }}
+        prerelease: true
         files: |
           iproute2-l4s.zip
